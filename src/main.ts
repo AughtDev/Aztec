@@ -1,5 +1,9 @@
 import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
 import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import AIActionModal, {AIModalMode, createPrompt} from "./commands";
+import {InputModal} from "./modals/input";
+import {MultiChoiceModal} from "./modals/multichoice";
+import {fetchOpenRouter} from "./ai";
 
 // Remember to rename these classes and interfaces!
 
@@ -8,6 +12,58 @@ export default class MyPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
+
+
+		// 2. Command (Selection Context)
+		this.addCommand({
+			id: 'ai-actions',
+			name: 'Aztec AI Actions',
+			hotkeys: [{modifiers: ["Alt"], key: "Enter"}],
+			editorCallback: (editor: Editor, view: MarkdownView) => {
+				const selection = editor.getSelection();
+				if (!selection) {
+					// Fallback if nothing selected
+					// new AIActionModal(this.app, editor.getValue(), AIModalMode.GENERAL, (action, context) => {
+					// 	console.log(`Selected action: ${action.label} on full file context ${context}`);
+					// 	this.handleAIAction(action, context, editor);
+					// }).open();
+					console.log("No selection, skipping AI Actions command.");
+					return;
+				}
+
+				new AIActionModal(this.app, selection, AIModalMode.SELECTION, (action, context) => {
+					console.log(`Selected action: ${action.label} on selection context: ${context}`);
+					this.handleAIAction(action, context, editor);
+				}).open();
+			}
+		});
+
+		this.registerEvent(
+			this.app.workspace.on("editor-menu", (menu, editor, view) => {
+				const selection = editor.getSelection();
+
+				menu.addItem((item) => {
+					item
+						.setTitle("AI Actions...")
+						.setIcon("bot") // You can use any Lucide icon name
+						.onClick(() => {
+							// Use selection if available, otherwise full file
+							const contextText = selection || editor.getValue();
+
+							new AIActionModal(
+								this.app,
+								contextText,
+								contextText ? AIModalMode.SELECTION : AIModalMode.GENERAL,
+								(action, context) => {
+									this.handleAIAction(action, context, editor);
+								}).open();
+						});
+				});
+			})
+		);
+
+		// region SAMPLE CODE
+		// ? ........................
 
 		// This creates an icon in the left ribbon.
 		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
@@ -68,9 +124,83 @@ export default class MyPlugin extends Plugin {
 		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
 		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
 
+		// ? ........................
+		// endregion ........................
+
+
 	}
 
-	onunload() {
+
+	handleAIAction(action: { actionType: string; label: string }, context: string, editor: Editor) {
+		console.log(`Performing ${action.actionType} on context: ${context}`);
+		switch (action.actionType) {
+			case "rewrite":
+			case "extend":
+			case "expound":
+			case "summarize":
+				new InputModal(
+					this.app,
+					"Custom Instructions", (instructions) => {
+						console.log(`Received custom instructions: ${instructions} for action ${action.actionType}`);
+						this.runActionFlow(action.actionType, context, editor, instructions);
+					}).open();
+				break;
+
+			// some cases do not need additional instructions, we can call the flow directly
+			case "fix":
+			case "fill-in":
+				this.runActionFlow(action.actionType, context, editor, "");
+				break;
+
+			default:
+				new Notice(`Action "${action.label}" is not yet implemented.`);
+		}
+	}
+
+	async callOpenRouter(prompt: string): Promise<string | null> {
+		return await fetchOpenRouter(this.settings.openRouterApiKey, prompt, this.settings.selectedModel);
+	}
+
+	async runActionFlow(action_type: string, context: string, editor: Editor, instructions: string, prev_options: string[] = []) {
+		// 1. Show a loading notice (optional but helpful)
+		new Notice("AI is thinking...");
+
+		// 2. Fetch the data
+		const rawResult = await this.callOpenRouter(
+			createPrompt(action_type, context, instructions),
+		);
+
+		if (!rawResult) {
+			new Notice("AI failed to respond.");
+			return;
+		}
+
+		// 3. Split the result into the 3 options
+		const choices = [
+			...rawResult.split("---").map(s => s.trim()).filter(s => s.length > 0),
+			...prev_options // Include previous options if this is a refinement round
+		]
+
+		// 4. Open the Multi-Choice Modal
+		new MultiChoiceModal(
+			this.app,
+			context,
+			choices,
+			(selectedChoice) => {
+				// SUCCESS: Replace the text in the editor
+				editor.replaceSelection(selectedChoice);
+
+				// (Future: add to history here)
+				new Notice("Text replaced!");
+			},
+			() => {
+				// RECURSION: The user clicked "Generate More"
+				// Open the input modal again to get new instructions
+				new InputModal(this.app, "Refine Instructions", (newInstruction) => {
+					this.runActionFlow(action_type, context, editor, newInstruction);
+				}).open();
+			}
+		).open();
 	}
 
 	async loadSettings() {
@@ -80,6 +210,10 @@ export default class MyPlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
+
+	onunload() {
+	}
+
 }
 
 class SampleModal extends Modal {

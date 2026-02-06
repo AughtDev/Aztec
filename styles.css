@@ -6,3 +6,36 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+
+.ai-original-box {
+	background-color: var(--background-secondary);
+	padding: 10px;
+	border-radius: 4px;
+	font-style: italic;
+	margin-top: 5px;
+	max-height: 150px;
+	overflow-y: auto;
+}
+
+.ai-option-item {
+	border: 1px solid var(--background-modifier-border);
+	padding: 15px;
+	margin-bottom: 15px;
+	border-radius: 8px;
+	transition: transform 0.1s ease;
+}
+
+.ai-option-item:hover {
+	background-color: var(--background-primary-alt);
+}
+
+.ai-option-text {
+	margin-bottom: 10px;
+	white-space: pre-wrap;
+}
+
+.ai-modal-footer {
+	margin-top: 20px;
+	display: flex;
+	justify-content: space-between;
+}
