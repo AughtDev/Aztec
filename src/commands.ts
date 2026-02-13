@@ -17,13 +17,15 @@ const SELECTION_ACTIONS: AztecAction[] = [
 	{label: "Expound", actionType: "expound"},
 	{label: "Extend", actionType: "extend"},
 	{label: "Summarize", actionType: "summarize"},
+	{label: "Chat", actionType: "chat"}
 ];
 
 const GENERAL_ACTIONS: AztecAction[] = [
-	{label: "Summarize", actionType: "summarize"},
-	{label: "Extract Action Items", actionType: "action_items"},
-	{label: "Generate Title", actionType: "generate_title"},
-	{label: "Identify Key Themes", actionType: "key_themes"},
+	// {label: "Summarize", actionType: "summarize"},
+	// {label: "Extract Action Items", actionType: "action_items"},
+	// {label: "Generate Title", actionType: "generate_title"},
+	// {label: "Identify Key Themes", actionType: "key_themes"},
+	{label: "Chat", actionType: "chat"}
 ]
 
 function actionToInitialInstructions(actionType: string): string {

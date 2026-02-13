@@ -4,6 +4,7 @@ import AIActionModal, {AIModalMode, createPrompt} from "./commands";
 import {InputModal} from "./modals/input";
 import {MultiChoiceModal} from "./modals/multichoice";
 import {fetchOpenRouter} from "./ai";
+import {ChatView, CHAT_VIEW_TYPE} from "./chat";
 
 // Remember to rename these classes and interfaces!
 
@@ -12,6 +13,25 @@ export default class MyPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
+
+		// Register the chat view
+		this.registerView(
+			CHAT_VIEW_TYPE,
+			(leaf) => new ChatView(leaf, this)
+		);
+
+		// Add command to open chat directly
+		this.addCommand({
+			id: 'open-chat',
+			name: 'Open AI Chat',
+			hotkeys: [{modifiers: ["Alt", "Shift"], key: "Enter"}],
+			editorCallback: (editor: Editor, view: MarkdownView) => {
+				const selection = editor.getSelection();
+				const context = selection || editor.getValue();
+				const articlePath = view.file?.path || "untitled";
+				this.openChatView(articlePath, context);
+			}
+		});
 
 
 		// 2. Command (Selection Context)
@@ -33,7 +53,7 @@ export default class MyPlugin extends Plugin {
 
 				new AIActionModal(this.app, selection, AIModalMode.SELECTION, (action, context) => {
 					console.log(`Selected action: ${action.label} on selection context: ${context}`);
-					this.handleAIAction(action, context, editor);
+					this.handleAIAction(action, context, editor, view);
 				}).open();
 			}
 		});
@@ -55,7 +75,9 @@ export default class MyPlugin extends Plugin {
 								contextText,
 								contextText ? AIModalMode.SELECTION : AIModalMode.GENERAL,
 								(action, context) => {
-									this.handleAIAction(action, context, editor);
+									// Cast to MarkdownView if it has the required properties
+									const markdownView = view instanceof MarkdownView ? view : undefined;
+									this.handleAIAction(action, context, editor, markdownView);
 								}).open();
 						});
 				});
@@ -131,7 +153,7 @@ export default class MyPlugin extends Plugin {
 	}
 
 
-	handleAIAction(action: { actionType: string; label: string }, context: string, editor: Editor) {
+	handleAIAction(action: { actionType: string; label: string }, context: string, editor: Editor, view?: MarkdownView) {
 		console.log(`Performing ${action.actionType} on context: ${context}`);
 		switch (action.actionType) {
 			case "rewrite":
@@ -152,8 +174,47 @@ export default class MyPlugin extends Plugin {
 				this.runActionFlow(action.actionType, context, editor, "");
 				break;
 
+			// Chat action opens the chat panel
+			case "chat":
+				const articlePath = view?.file?.path || this.app.workspace.getActiveFile()?.path || "untitled";
+				this.openChatView(articlePath, context);
+				break;
+
 			default:
 				new Notice(`Action "${action.label}" is not yet implemented.`);
+		}
+	}
+
+	/**
+	 * Opens the chat view in the right sidebar
+	 */
+	async openChatView(articlePath: string, context: string): Promise<void> {
+		const { workspace } = this.app;
+
+		// Check if a chat view is already open
+		let leaf = workspace.getLeavesOfType(CHAT_VIEW_TYPE)[0];
+
+		if (!leaf) {
+			// Open in the right sidebar
+			const rightLeaf = workspace.getRightLeaf(false);
+			if (rightLeaf) {
+				leaf = rightLeaf;
+				await leaf.setViewState({
+					type: CHAT_VIEW_TYPE,
+					active: true
+				});
+			}
+		}
+
+		if (leaf) {
+			// Reveal the leaf
+			workspace.revealLeaf(leaf);
+
+			// Initialize the chat view with context
+			const chatView = leaf.view as ChatView;
+			if (chatView && chatView.initializeChat) {
+				await chatView.initializeChat(articlePath, context);
+			}
 		}
 	}
 
